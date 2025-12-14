@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebAR 粒子互动系统</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+    </style>
+    <script src="https://unpkg.com/three@0.132.2/build/three.min.js"></script>
+    <script src="https://unpkg.com/@mediapipe/hands@0.4.1659419535/hands.min.js"></script>
+    <script src="https://unpkg.com/dat.gui@0.7.7/build/dat.gui.min.js"></script>
+</head>
+<body>
+    <script>
+        let scene, camera, renderer, particles, handMesh, controls;
+        let gesture = "none";  // 当前手势
+        const particleCount = 16000;
+        const particlesGeometry = new THREE.BufferGeometry();
+        const particlesMaterial = new THREE.PointsMaterial({ color: 0x00FFFF, size: 0.1 });
+
+        // 设置粒子系统
+        const positions = new Float32Array(particleCount * 3);
+        for (let i = 0; i < particleCount; i++) {
+            positions[i * 3] = Math.random() * 10 - 5;
+            positions[i * 3 + 1] = Math.random() * 10 - 5;
+            positions[i * 3 + 2] = Math.random() * 10 - 5;
+        }
+        particlesGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        particles = new THREE.Points(particlesGeometry, particlesMaterial);
+
+        // 创建场景、相机和渲染器
+        scene = new THREE.Scene();
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // 设置相机位置
+        camera.position.z = 10;
+
+        // 初始化手势识别器
+        const hands = new Hands({ locateFile: (file) => `https://unpkg.com/@mediapipe/hands@0.4.1659419535/${file}` });
+        hands.onResults(onResults);
+
+        // 设置摄像头
+        const video = document.createElement('video');
+        navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+            video.srcObject = stream;
+            video.play();
+        });
+
+        // 处理手势识别结果
+        function onResults(results) {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                detectGesture(landmarks);
+                interactWithParticles(landmarks);
+            }
+        }
+
+        // 检测手势
+        function detectGesture(landmarks) {
+            const thumbUp = landmarks[4].y < landmarks[3].y;
+            const fingerSign = landmarks[8].y < landmarks[6].y && landmarks[12].y < landmarks[10].y;
+            
+            if (thumbUp) gesture = "thumb_up"; // 竖大拇指
+            else if (fingerSign) gesture = "star"; // 食指变星
+            else gesture = "none"; // 其他手势
+
+            // 根据手势改变粒子效果
+            switch (gesture) {
+                case 'thumb_up':
+                    createHeartEffect();
+                    break;
+                case 'star':
+                    createStarEffect();
+                    break;
+                default:
+                    resetParticleEffect();
+                    break;
+            }
+        }
+
+        // 挥手风暴交互：手速过快时粒子飞散
+        function interactWithParticles(landmarks) {
+            // 手掌面积或手指的移动速度，可以通过 landmarks 来计算
+            const palmArea = (landmarks[0].x - landmarks[9].x) * (landmarks[0].y - landmarks[9].y);
+            if (palmArea > 0.2) {
+                particlesMaterial.size += 0.1; // 挥动时增加粒子大小
+            }
+        }
+
+        // 生成爱心效果
+        function createHeartEffect() {
+            particlesMaterial.color.set(0xFF0000); // 改为红色
+        }
+
+        // 生成星星效果
+        function createStarEffect() {
+            particlesMaterial.color.set(0xFFFF00); // 改为黄色
+        }
+
+        // 重置粒子效果
+        function resetParticleEffect() {
+            particlesMaterial.color.set(0x00FFFF); // 恢复为青色
+        }
+
+        // 动画渲染循环
+        function animate() {
+            hands.send({ image: video });
+            requestAnimationFrame(animate);
+            particles.rotation.x += 0.001;
+            particles.rotation.y += 0.001;
+            renderer.render(scene, camera);
+        }
+
+        // 初始化函数
+        function init() {
+            scene.add(particles);
+            animate();
+        }
+
+        // 初始化系统
+        init();
+    </script>
+</body>
+</html>
