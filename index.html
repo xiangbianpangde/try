@@ -1,129 +1,137 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebAR 粒子互动系统</title>
-    <style>
-        body { margin: 0; overflow: hidden; }
-        canvas { display: block; }
-    </style>
-    <script src="https://unpkg.com/three@0.132.2/build/three.min.js"></script>
-    <script src="https://unpkg.com/@mediapipe/hands@0.4.1659419535/hands.min.js"></script>
-    <script src="https://unpkg.com/dat.gui@0.7.7/build/dat.gui.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebAR 粒子互动系统</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
+  </style>
 </head>
 <body>
-    <script>
-        let scene, camera, renderer, particles, handMesh, controls;
-        let gesture = "none";  // 当前手势
-        const particleCount = 16000;
-        const particlesGeometry = new THREE.BufferGeometry();
-        const particlesMaterial = new THREE.PointsMaterial({ color: 0x00FFFF, size: 0.1 });
+  <script>
+    // 通过异步加载脚本来确保顺序
+    window.onload = async function() {
+      // 加载 Three.js 库
+      await loadScript('https://unpkg.com/three@0.132.2/build/three.min.js');
+      
+      // 加载 MediaPipe Hands 库
+      await loadScript('https://unpkg.com/@mediapipe/hands@0.4.1659419535/hands.min.js');
+      
+      // 运行主程序
+      init();
+    };
 
-        // 设置粒子系统
-        const positions = new Float32Array(particleCount * 3);
-        for (let i = 0; i < particleCount; i++) {
-            positions[i * 3] = Math.random() * 10 - 5;
-            positions[i * 3 + 1] = Math.random() * 10 - 5;
-            positions[i * 3 + 2] = Math.random() * 10 - 5;
+    // 脚本加载函数
+    function loadScript(url) {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = url;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    }
+
+    // 初始化 Three.js 和 MediaPipe Hands
+    function init() {
+      // 创建场景、相机和渲染器
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      const renderer = new THREE.WebGLRenderer();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      // 创建粒子系统
+      const particles = createParticles();
+      scene.add(particles);
+
+      // 添加光源
+      const light = new THREE.AmbientLight(0x404040, 2); // 环境光
+      scene.add(light);
+
+      // 设置相机位置
+      camera.position.z = 5;
+
+      // 设置手势识别
+      const hands = new Hands();
+      hands.setOptions({
+        maxNumHands: 2,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+      });
+      
+      // 加载手势数据处理回调
+      hands.onResults(onResults);
+
+      // 创建一个 MediaPipe 摄像头视频流
+      const videoElement = document.createElement('video');
+      videoElement.width = 640;
+      videoElement.height = 480;
+      videoElement.style.display = 'none';  // 隐藏视频元素
+      document.body.appendChild(videoElement);
+
+      // 获取视频流并播放
+      navigator.mediaDevices.getUserMedia({
+        video: true
+      }).then((stream) => {
+        videoElement.srcObject = stream;
+        videoElement.play();
+        detectHands();
+      }).catch(err => {
+        console.error("无法访问摄像头: ", err);
+      });
+
+      // 开始手势检测
+      function detectHands() {
+        hands.send({image: videoElement});
+        requestAnimationFrame(detectHands);
+      }
+
+      // 手势识别回调函数
+      function onResults(results) {
+        if (results.multiHandLandmarks) {
+          results.multiHandLandmarks.forEach((landmarks) => {
+            // 根据手势形状或位置改变粒子行为
+            console.log("Hand landmarks detected:", landmarks);
+          });
         }
-        particlesGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        particles = new THREE.Points(particlesGeometry, particlesMaterial);
+      }
 
-        // 创建场景、相机和渲染器
-        scene = new THREE.Scene();
-        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        renderer = new THREE.WebGLRenderer();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        document.body.appendChild(renderer.domElement);
+      // 渲染循环
+      function animate() {
+        requestAnimationFrame(animate);
 
-        // 设置相机位置
-        camera.position.z = 10;
+        // 旋转粒子系统
+        particles.rotation.x += 0.01;
+        particles.rotation.y += 0.01;
 
-        // 初始化手势识别器
-        const hands = new Hands({ locateFile: (file) => `https://unpkg.com/@mediapipe/hands@0.4.1659419535/${file}` });
-        hands.onResults(onResults);
+        renderer.render(scene, camera);
+      }
 
-        // 设置摄像头
-        const video = document.createElement('video');
-        navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
-            video.srcObject = stream;
-            video.play();
-        });
+      animate();
+    }
 
-        // 处理手势识别结果
-        function onResults(results) {
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const landmarks = results.multiHandLandmarks[0];
-                detectGesture(landmarks);
-                interactWithParticles(landmarks);
-            }
-        }
+    // 创建粒子系统
+    function createParticles() {
+      const geometry = new THREE.SphereGeometry(0.1, 8, 8);
+      const material = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true });
+      const particles = new THREE.Group();
 
-        // 检测手势
-        function detectGesture(landmarks) {
-            const thumbUp = landmarks[4].y < landmarks[3].y;
-            const fingerSign = landmarks[8].y < landmarks[6].y && landmarks[12].y < landmarks[10].y;
-            
-            if (thumbUp) gesture = "thumb_up"; // 竖大拇指
-            else if (fingerSign) gesture = "star"; // 食指变星
-            else gesture = "none"; // 其他手势
+      // 创建多个粒子
+      for (let i = 0; i < 16000; i++) {
+        const particle = new THREE.Mesh(geometry, material);
+        particle.position.set(
+          (Math.random() - 0.5) * 20,  // x
+          (Math.random() - 0.5) * 20,  // y
+          (Math.random() - 0.5) * 20   // z
+        );
+        particles.add(particle);
+      }
 
-            // 根据手势改变粒子效果
-            switch (gesture) {
-                case 'thumb_up':
-                    createHeartEffect();
-                    break;
-                case 'star':
-                    createStarEffect();
-                    break;
-                default:
-                    resetParticleEffect();
-                    break;
-            }
-        }
-
-        // 挥手风暴交互：手速过快时粒子飞散
-        function interactWithParticles(landmarks) {
-            // 手掌面积或手指的移动速度，可以通过 landmarks 来计算
-            const palmArea = (landmarks[0].x - landmarks[9].x) * (landmarks[0].y - landmarks[9].y);
-            if (palmArea > 0.2) {
-                particlesMaterial.size += 0.1; // 挥动时增加粒子大小
-            }
-        }
-
-        // 生成爱心效果
-        function createHeartEffect() {
-            particlesMaterial.color.set(0xFF0000); // 改为红色
-        }
-
-        // 生成星星效果
-        function createStarEffect() {
-            particlesMaterial.color.set(0xFFFF00); // 改为黄色
-        }
-
-        // 重置粒子效果
-        function resetParticleEffect() {
-            particlesMaterial.color.set(0x00FFFF); // 恢复为青色
-        }
-
-        // 动画渲染循环
-        function animate() {
-            hands.send({ image: video });
-            requestAnimationFrame(animate);
-            particles.rotation.x += 0.001;
-            particles.rotation.y += 0.001;
-            renderer.render(scene, camera);
-        }
-
-        // 初始化函数
-        function init() {
-            scene.add(particles);
-            animate();
-        }
-
-        // 初始化系统
-        init();
-    </script>
+      return particles;
+    }
+  </script>
 </body>
 </html>
